@@ -1,10 +1,13 @@
+// lib/screens/map_screen.dart
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/location_service.dart';
 import '../widgets/emoji_marker.dart';
+import '../widgets/emoji_interaction_handler.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -19,8 +22,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Marker? _animatedMarker;
   final LocationService _locationService = LocationService();
   final Random _random = Random();
+  late EmojiInteractionHandler _emojiInteractionHandler;
   
-  // Add map style
+  // Map style
   final String _darkMapStyle = '''
   [
     {
@@ -257,7 +261,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   ]
   ''';
 
-  // Animation controller for radar effect
+  // Animation controller
   late AnimationController _radarController;
   late Animation<double> _radarAnimation;
 
@@ -273,18 +277,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     
-    // Setup radar animation
+    _emojiInteractionHandler = EmojiInteractionHandler(
+      onEmojiTapped: (position) => _handleEmojiTapped('emojiId', position),
+      onEmojiLongPressed: _handleEmojiLongPressed,
+    );
+    
     _radarController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat();
     
     _radarAnimation = Tween<double>(begin: 0, end: 1.0).animate(_radarController);
-    
-    // Initialize map
     _initMap();
     
-    // Auto-hide status message after delay
     Timer(const Duration(seconds: 4), () {
       if (mounted) {
         setState(() {
@@ -293,16 +298,50 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       }
     });
     
-    // Set system UI overlay style
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light.copyWith(
       statusBarColor: Colors.transparent,
       systemNavigationBarColor: const Color(0xFF0B1622),
     ));
   }
 
+  void _handleEmojiTapped(String emojiId, LatLng position) {
+    setState(() {
+      _statusMessage = "Caught emoji $emojiId at: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}!";
+      _showMessage = true;
+      _markers.removeWhere((m) => m.markerId.value == emojiId); // Remove the emoji
+      _emojiCount--; // Decrease the emoji count
+    });
+
+    Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _showMessage = false;
+        });
+      }
+    });
+  }
+
+  void _handleEmojiLongPressed(String emojiId, LatLng position) {
+    setState(() {
+      _statusMessage = "Emoji $emojiId removed!";
+      _showMessage = true;
+      _markers.removeWhere((m) => m.markerId.value == emojiId);
+      _emojiCount--;
+    });
+    
+    Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _showMessage = false;
+        });
+      }
+    });
+  }
+
   Future<void> _initMap() async {
     setState(() {
       _statusMessage = "Acquiring location...";
+      _showMessage = true;
     });
     
     final location = await _locationService.getCurrentLocation();
@@ -312,13 +351,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _emojiCount = 10;
     });
     
-    await _generateRandomEmojis(location, 10); // Generate 10 random emojis
+    await _generateRandomEmojis(location, 10);
     await _animateMarker(location);
     
     if (_mapController != null) {
-      _mapController.animateCamera(CameraUpdate.newLatLngZoom(location, 18.0));
-      
-      // Apply map style
+      _mapController.animateCamera(CameraUpdate.newLatLngZoom(location, 20.0));
       _mapController.setMapStyle(_darkMapStyle);
     }
     
@@ -326,7 +363,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _statusMessage = "Area secured. System online.";
     });
     
-    // Auto-hide status message after delay
     Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
@@ -337,7 +373,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _generateRandomEmojis(LatLng center, int count) async {
-    const radius = 0.0001; // ~10 meters in degrees
+    const radius = 0.0001;
     final markers = <Marker>[];
     
     for (int i = 0; i < count; i++) {
@@ -352,7 +388,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         position: position,
         id: 'emoji_$i',
         emoji: _getRandomEmoji(),
-        size: 24, // Smaller size
+        size: 50, // Increased size
+        onTap: () => _handleEmojiTapped('emoji_$i', position), // Pass emojiId and position
+        onLongPress: () => _emojiInteractionHandler.handleLongPress('emoji_$i', position),
       ));
     }
     
@@ -379,16 +417,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     setState(() {
       _animatedMarker = newMarker;
       _markers.add(newMarker);
-      
-      // Calculate distance for display (just for UI effect)
       _distance = _random.nextDouble() * 100;
-      
-      // Show status message
       _statusMessage = "Target acquired at: ${destination.latitude.toStringAsFixed(6)}, ${destination.longitude.toStringAsFixed(6)}";
       _showMessage = true;
     });
     
-    // Auto-hide status message after delay
     Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
@@ -423,7 +456,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Icon(Icons.radar, color: Colors.cyan.shade400),
             const SizedBox(width: 8),
             const Text(
-              "QUANTUM LOCATOR",
+              "Emoji Explorer",
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -455,11 +488,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       ),
       body: Stack(
         children: [
-          // Map
           GoogleMap(
             initialCameraPosition: const CameraPosition(
-              target: LatLng(0, 0), // Will be quickly replaced
-              zoom: 18.0,
+              target: LatLng(0, 0),
+              zoom: 20.0,
             ),
             markers: _markers,
             onMapCreated: _onMapCreated,
@@ -471,9 +503,39 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             zoomControlsEnabled: false,
             compassEnabled: false,
             mapToolbarEnabled: false,
+            minMaxZoomPreference: const MinMaxZoomPreference(18, 24),
           ),
           
-          // Radar overlay
+          // Custom compass
+          Positioned(
+            top: 140,
+            right: 16,
+            child: GestureDetector(
+              onTap: () {
+                if (_mapController != null) {
+                  _mapController.animateCamera(
+                    CameraUpdate.newLatLngZoom(
+                      _animatedMarker?.position ?? const LatLng(0, 0),
+                      20.0,
+                    ),
+                  );
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.cyan.shade700, width: 1),
+                ),
+                child: Icon(
+                  Icons.explore,
+                  color: Colors.cyan.shade400,
+                ),
+              ),
+            ),
+          ),
+          
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _radarAnimation,
@@ -487,11 +549,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
           ),
           
-          // HUD elements
           SafeArea(
             child: Column(
               children: [
-                // Status message
                 AnimatedOpacity(
                   opacity: _showMessage ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 500),
@@ -523,7 +583,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 
                 const Spacer(),
                 
-                // Bottom HUD
                 Container(
                   margin: const EdgeInsets.all(16),
                   padding: const EdgeInsets.all(16),
@@ -565,6 +624,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ],
       ),
       floatingActionButton: Container(
+        margin: const EdgeInsets.only(bottom: 100),
         decoration: BoxDecoration(
           color: Colors.cyan.shade900,
           shape: BoxShape.circle,
@@ -630,7 +690,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 }
 
-// Custom painter for radar effect
 class RadarPainter extends CustomPainter {
   final double progress;
   
@@ -641,7 +700,6 @@ class RadarPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = min(size.width, size.height) * 0.4;
     
-    // Draw scan line
     final scanPaint = Paint()
       ..color = Colors.cyan.shade400.withOpacity(0.7)
       ..style = PaintingStyle.stroke
@@ -653,7 +711,6 @@ class RadarPainter extends CustomPainter {
     
     canvas.drawLine(center, Offset(scanX, scanY), scanPaint);
     
-    // Draw radar circles
     final circlePaint = Paint()
       ..color = Colors.cyan.shade400.withOpacity(0.2)
       ..style = PaintingStyle.stroke
@@ -664,7 +721,6 @@ class RadarPainter extends CustomPainter {
       canvas.drawCircle(center, circleRadius, circlePaint);
     }
     
-    // Draw scan area
     final scanAreaPaint = Paint()
       ..shader = SweepGradient(
         center: Alignment.center,
