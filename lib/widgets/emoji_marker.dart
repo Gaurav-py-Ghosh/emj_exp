@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'emoji_model.dart';
 
 class EmojiMarker {
   static Future<BitmapDescriptor> _getEmojiBitmap(String emoji, int size) async {
@@ -32,6 +33,7 @@ class EmojiMarker {
     required String emoji,
     required int size,
     required VoidCallback onTap,
+    required int tier,
   }) async {
     final icon = await _getEmojiBitmap(emoji, size);
     
@@ -41,6 +43,7 @@ class EmojiMarker {
       icon: icon,
       anchor: const Offset(0.5, 0.5),
       onTap: onTap,
+      zIndex: tier.toDouble(), // Higher tier appears above lower
     );
   }
 }

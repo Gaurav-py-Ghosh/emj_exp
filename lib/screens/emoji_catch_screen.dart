@@ -3,15 +3,17 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:vibration/vibration.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../widgets/emoji_model.dart';
 
 class EmojiCatchScreen extends StatefulWidget {
-  final String emoji;
+  final EmojiTier emojiTier;
   final VoidCallback onCatchComplete;
 
   const EmojiCatchScreen({
     super.key,
-    required this.emoji,
+    required this.emojiTier,
     required this.onCatchComplete,
   });
 
@@ -19,15 +21,21 @@ class EmojiCatchScreen extends StatefulWidget {
   State<EmojiCatchScreen> createState() => _EmojiCatchScreenState();
 }
 
-class _EmojiCatchScreenState extends State<EmojiCatchScreen> with TickerProviderStateMixin {
+class _EmojiCatchScreenState extends State<EmojiCatchScreen> 
+    with TickerProviderStateMixin {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   late AnimationController _catchController;
+  late AnimationController _specialAnimationController;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _opacityAnimation;
   double _scanPosition = 0;
   Timer? _scanTimer;
   bool _isCaught = false;
   bool _cameraError = false;
   bool _isDisposed = false;
+  double _progressValue = 0;
+  Timer? _progressTimer;
 
   @override
   void initState() {
@@ -41,8 +49,30 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen> with TickerProvider
         }
       });
 
+    if (widget.emojiTier.hasSpecialAnimation) {
+      _specialAnimationController = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 800),
+      )..repeat(reverse: true);
+      
+      _scaleAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+        CurvedAnimation(
+          parent: _specialAnimationController,
+          curve: Curves.elasticOut,
+        ),
+      );
+
+      _opacityAnimation = Tween<double>(begin: 0.7, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _specialAnimationController,
+          curve: Curves.easeInOut,
+        ),
+      );
+    }
+
     _setupCamera();
     _startScanning();
+    _startProgressTimer();
     _catchController.forward();
   }
 
@@ -113,160 +143,213 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen> with TickerProvider
     });
   }
 
-  void _catchComplete() {
+  void _startProgressTimer() {
+    const totalSteps = 100;
+    const stepDuration = Duration(milliseconds: 100);
+    
+    _progressTimer = Timer.periodic(stepDuration, (timer) {
+      if (!mounted || _isDisposed) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _progressValue = (_progressValue + (1 / totalSteps)).clamp(0.0, 1.0);
+        if (_progressValue >= 1.0) timer.cancel();
+      });
+    });
+  }
+
+  void _catchComplete() async {
     if (!mounted || _isDisposed) return;
+    
+    // Vibrate based on tier
+    if (widget.emojiTier.tier >= 2) {
+      await Vibration.vibrate(duration: widget.emojiTier.tier == 3 ? 1000 : 500);
+    }
+
     setState(() {
       _isCaught = true;
       _scanTimer?.cancel();
+      _progressTimer?.cancel();
     });
-    Future.delayed(const Duration(seconds: 1), () {
-      if (!mounted || _isDisposed) return;
-      widget.onCatchComplete();
-      Navigator.pop(context, true);
-    });
+
+    await Future.delayed(const Duration(seconds: 1));
+
+    if (!mounted || _isDisposed) return;
+    widget.onCatchComplete();
+    Navigator.pop(context, true);
   }
 
   @override
   void dispose() {
     _isDisposed = true;
     _catchController.dispose();
+    if (widget.emojiTier.hasSpecialAnimation) {
+      _specialAnimationController.dispose();
+    }
     _controller?.dispose();
     _scanTimer?.cancel();
+    _progressTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (_cameraError) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error, color: Colors.white, size: 50),
-              const SizedBox(height: 20),
-              const Text(
-                'Camera unavailable',
-                style: TextStyle(color: Colors.white, fontSize: 20),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Back to Map'),
-              ),
-            ],
-          ),
-        ),
-      );
+      return _buildErrorScreen();
     }
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _initializeControllerFuture == null
-          ? const Center(child: CircularProgressIndicator())
-          : FutureBuilder<void>(
+      body: Stack(
+        children: [
+          // Camera Preview
+          if (_initializeControllerFuture != null)
+            FutureBuilder<void>(
               future: _initializeControllerFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  if (_controller == null || !_controller!.value.isInitialized) {
-                    return _buildErrorState();
-                  }
-                  return Stack(
-                    children: [
-                      CameraPreview(_controller!),
-                      _buildEmojiDisplay(),
-                      _buildScanningOverlay(),
-                      _buildCatchProgress(),
-                      _buildCloseButton(),
-                    ],
-                  );
-                } else if (snapshot.hasError) {
-                  return _buildErrorState();
+                if (snapshot.connectionState == ConnectionState.done &&
+                    _controller != null &&
+                    _controller!.value.isInitialized) {
+                  return CameraPreview(_controller!);
                 }
                 return const Center(child: CircularProgressIndicator());
               },
             ),
+          
+          // Overlay
+          Container(
+            color: Colors.black.withOpacity(0.4),
+            child: Column(
+              children: [
+                const Spacer(),
+                _buildEmojiDisplay(),
+                const Spacer(),
+                _buildProgressIndicator(),
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+          
+          // Scanning Line
+          Positioned(
+            top: _scanPosition * MediaQuery.of(context).size.height,
+            child: Container(
+              width: MediaQuery.of(context).size.width,
+              height: 2,
+              color: Colors.red.withOpacity(0.7),
+            ),
+          ),
+          
+          // Close Button
+          Positioned(
+            top: 40,
+            right: 20,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.pop(context, false),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildErrorState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.camera_alt, size: 50, color: Colors.white),
-          const SizedBox(height: 20),
-          const Text(
-            'Camera initialization failed',
-            style: TextStyle(color: Colors.white, fontSize: 18),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Return to Map'),
-          ),
-        ],
+  Widget _buildErrorScreen() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, color: Colors.white, size: 50),
+            const SizedBox(height: 20),
+            const Text(
+              'Camera unavailable',
+              style: TextStyle(color: Colors.white, fontSize: 20),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, false),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+              ),
+              child: const Text(
+                'Back to Map',
+                style: TextStyle(color: Colors.black),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildEmojiDisplay() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            widget.emoji,
-            style: const TextStyle(fontSize: 100),
+    final emojiWidget = Text(
+      widget.emojiTier.emoji,
+      style: const TextStyle(fontSize: 100),
+    );
+
+    if (!widget.emojiTier.hasSpecialAnimation) {
+      return emojiWidget;
+    }
+
+    return AnimatedBuilder(
+      animation: _specialAnimationController,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _opacityAnimation.value,
+          child: Transform.scale(
+            scale: _scaleAnimation.value,
+            child: emojiWidget,
           ),
-          const SizedBox(height: 20),
-          Text(
-            _isCaught ? 'Caught!' : 'Scanning...',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+        );
+      },
+    );
+  }
+
+  Widget _buildProgressIndicator() {
+    return Column(
+      children: [
+        Text(
+          _isCaught ? 'Caught!' : 'Scanning... (Tier ${widget.emojiTier.tier})',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: LinearProgressIndicator(
+            value: _progressValue,
+            minHeight: 20,
+            backgroundColor: Colors.grey[800],
+            valueColor: AlwaysStoppedAnimation<Color>(
+              _getProgressColor(widget.emojiTier.tier),
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '${widget.emojiTier.points} points',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildScanningOverlay() {
-    return Positioned(
-      top: _scanPosition * MediaQuery.of(context).size.height,
-      child: Container(
-        width: MediaQuery.of(context).size.width,
-        height: 2,
-        color: Colors.red.withOpacity(0.7),
-      ),
-    );
-  }
-
-  Widget _buildCatchProgress() {
-    return Positioned(
-      bottom: 50,
-      left: 20,
-      right: 20,
-      child: LinearProgressIndicator(
-        value: _catchController.value,
-        minHeight: 20,
-        backgroundColor: Colors.grey[800],
-        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-      ),
-    );
-  }
-
-  Widget _buildCloseButton() {
-    return Positioned(
-      top: 40,
-      right: 20,
-      child: IconButton(
-        icon: const Icon(Icons.close, color: Colors.white, size: 30),
-        onPressed: () => Navigator.pop(context),
-      ),
-    );
+  Color _getProgressColor(int tier) {
+    switch (tier) {
+      case 1: return Colors.blue;
+      case 2: return Colors.purple;
+      case 3: return Colors.orange;
+      default: return Colors.green;
+    }
   }
 }
