@@ -1,5 +1,4 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -32,6 +31,7 @@ class EmojiMarker {
     required String id,
     required String emoji,
     required int size,
+    required VoidCallback onTap,
   }) async {
     final icon = await _getEmojiBitmap(emoji, size);
     
@@ -40,6 +40,7 @@ class EmojiMarker {
       position: position,
       icon: icon,
       anchor: const Offset(0.5, 0.5),
+      onTap: onTap,
     );
   }
 }
