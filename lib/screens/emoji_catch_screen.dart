@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_maps_flutter_platform_interface/src/types/location.dart';
 import 'package:vibration/vibration.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../widgets/emoji_model.dart';
@@ -10,11 +11,12 @@ import '../widgets/emoji_model.dart';
 class EmojiCatchScreen extends StatefulWidget {
   final EmojiTier emojiTier;
   final VoidCallback onCatchComplete;
+   final LatLng? catchLocation;
 
   const EmojiCatchScreen({
     super.key,
     required this.emojiTier,
-    required this.onCatchComplete,
+    required this.onCatchComplete, this.catchLocation,
   });
 
   @override
@@ -252,6 +254,31 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
           ),
         ],
       ),
+    );
+  }
+   Widget _buildCatchResult() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${widget.emojiTier.emoji} Caught!',
+          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '+${widget.emojiTier.points} points',
+          style: const TextStyle(fontSize: 24, color: Colors.green),
+        ),
+        if (widget.catchLocation != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              'Location: ${widget.catchLocation!.latitude.toStringAsFixed(4)}, '
+              '${widget.catchLocation!.longitude.toStringAsFixed(4)}',
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+      ],
     );
   }
 

@@ -22,4 +22,7 @@ class LocationService {
     final locationData = await _location.getLocation();
     return LatLng(locationData.latitude!, locationData.longitude!);
   }
+
+  // Expose the location stream
+  Stream<LocationData> get locationStream => _location.onLocationChanged;
 }

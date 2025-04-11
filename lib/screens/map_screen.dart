@@ -1,14 +1,16 @@
+// map_screen.dart
 import 'dart:async';
 import 'dart:math';
-import 'package:emoji_exp/services/location_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:camera/camera.dart';
-import '../widgets/emoji_marker.dart';
+import 'package:vector_math/vector_math.dart' as vm;
 import '../widgets/emoji_model.dart';
+import '../widgets/emoji_marker.dart';
 import 'emoji_catch_screen.dart';
 import 'inventory_screen.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -17,160 +19,260 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  // Core components
   late GoogleMapController _mapController;
   final Set<Marker> _markers = {};
-  Marker? _animatedMarker;
-  final LocationService _locationService = LocationService();
+  final Location _location = Location();
   final Random _random = Random();
+  
+  // Game state
   int _totalPoints = 0;
-  bool _isCatching = false;
-  Timer? _generationTimer;
-  LatLng? _currentLocation;
-  double _distanceToClosestEmoji = double.infinity;
   final List<EmojiInventoryItem> _inventory = [];
-  final Hotspot _specialHotspot = Hotspot(
-    location: LatLng(37.7749, -122.4194), // Example coordinates (SF)
-    guaranteedTier: 3,
-  );
+  bool _isCatching = false;
+  
+  // Location tracking
+  LatLng _currentPosition = const LatLng(0, 0); // Initialize with default
+  bool _locationReady = false;
+  double _currentZoom = 18.0;
+  StreamSubscription<LocationData>? _locationSubscription;
+  double _distanceToClosestEmoji = double.infinity;
+  
+  // Emoji management
+  Set<String> _visibleEmojiIds = {};
+  Timer? _emojiUpdateTimer;
+  DateTime? _lastEmojiUpdate;
+  
+  // Camera
   List<CameraDescription>? _cameras;
-  DateTime? _lastGenerationTime;
+  
+  // Constants
+  static const double _spawnRadius = 100.0; // meters
+  static const double _interactionRadius = 7.0; // meters
+  static const double _visibilityRadius = 15.0; // meters
+  static const Duration _emojiRefreshInterval = Duration(seconds: 30);
 
   @override
   void initState() {
     super.initState();
-    _initializeCamera();
-    _initMap();
-    _startGenerationTimer();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    await _initializeCamera();
+    await _initializeLocation();
   }
 
   Future<void> _initializeCamera() async {
     try {
       _cameras = await availableCameras();
     } catch (e) {
-      debugPrint('Camera initialization error: $e');
+      debugPrint('Camera error: $e');
     }
   }
 
-  void _startGenerationTimer() {
-    _generationTimer = Timer.periodic(
-      const Duration(minutes: 10), 
-      (_) => _generateEmojisAroundLocation(),
-    );
-  }
-
-  Future<void> _initMap() async {
+  Future<void> _initializeLocation() async {
     try {
-      final location = await _locationService.getCurrentLocation();
-      setState(() => _currentLocation = location);
-      await _generateEmojisAroundLocation();
-      await _animateMarker(location);
-      _mapController.animateCamera(
-        CameraUpdate.newLatLngZoom(location, 18.0),
-      );
+      // Check and request permissions
+      final permissionStatus = await Permission.location.request();
+      if (!permissionStatus.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission required')),
+          );
+        }
+        return;
+      }
+
+      // Check if location service is enabled
+      final serviceEnabled = await _location.serviceEnabled();
+      if (!serviceEnabled) {
+        final serviceRequest = await _location.requestService();
+        if (!serviceRequest && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please enable location services')),
+          );
+          return;
+        }
+      }
+
+      // Get initial position
+      final initialLocation = await _location.getLocation();
+      if (mounted) {
+        setState(() {
+          _currentPosition = LatLng(initialLocation.latitude!, initialLocation.longitude!);
+          _locationReady = true;
+        });
+      }
+
+      // Start tracking
+      _startLocationTracking();
+      _startEmojiUpdateTimer();
+      _generateEmojisAroundLocation();
+      
     } catch (e) {
-      debugPrint('Map initialization error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to initialize map')),
+      debugPrint('Location initialization error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Location error: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  void _startLocationTracking() {
+    _location.changeSettings(
+      accuracy: LocationAccuracy.high,
+      interval: 1000,
+      distanceFilter: 2.0,
+    );
+
+    _locationSubscription = _location.onLocationChanged.listen((LocationData currentLocation) {
+      if (currentLocation.latitude == null || currentLocation.longitude == null) return;
+      
+      final newPosition = LatLng(currentLocation.latitude!, currentLocation.longitude!);
+      
+      if (!_locationReady || _calculateDistance(_currentPosition, newPosition) > 5) {
+        if (mounted) {
+          setState(() {
+            _currentPosition = newPosition;
+            _locationReady = true;
+          });
+        }
+        _updateMapCamera(newPosition);
+        _updateVisibleEmojis();
+      }
+    }, onError: (e) {
+      debugPrint('Location tracking error: $e');
+    });
+  }
+
+  void _updateMapCamera(LatLng newPosition) {
+    if (_mapController != null) {
+      _mapController.animateCamera(
+        CameraUpdate.newLatLng(newPosition),
       );
     }
+  }
+
+  void _startEmojiUpdateTimer() {
+    _emojiUpdateTimer?.cancel();
+    _emojiUpdateTimer = Timer.periodic(_emojiRefreshInterval, (_) {
+      if (_locationReady) {
+        _generateEmojisAroundLocation();
+      }
+    });
   }
 
   Future<void> _generateEmojisAroundLocation() async {
-    if (_currentLocation == null) return;
+    if (!_locationReady) return;
 
-    final newMarkers = <Marker>[];
-    const radius = 350 / 111300.0; // Convert meters to degrees
-    _lastGenerationTime = DateTime.now();
+    debugPrint('Generating emojis around: $_currentPosition');
+    
+    final newMarkers = <Marker>{};
+    final now = DateTime.now();
+    _lastEmojiUpdate = now;
 
-    // Generate regular emojis with tier distribution
+    // Generate regular emojis
     for (int i = 0; i < 15; i++) {
+      final distance = _random.nextDouble() * _spawnRadius;
       final angle = _random.nextDouble() * 2 * pi;
-      final distance = _random.nextDouble() * radius;
-      final offsetLat = distance * cos(angle);
-      final offsetLng = distance * sin(angle);
+      final position = _calculateNewPosition(_currentPosition, distance, angle);
       
-      final position = LatLng(
-        _currentLocation!.latitude + offsetLat,
-        _currentLocation!.longitude + offsetLng,
-      );
-
-      // Tier distribution: 70% Tier 1, 25% Tier 2, 5% Tier 3
-      final tierRoll = _random.nextInt(100);
-      EmojiTier emojiTier;
-      if (tierRoll < 70) {
-        emojiTier = emojiTiers.where((e) => e.tier == 1).elementAt(_random.nextInt(3));
-      } else if (tierRoll < 95) {
-        emojiTier = emojiTiers.where((e) => e.tier == 2).elementAt(_random.nextInt(2));
-      } else {
-        emojiTier = emojiTiers.where((e) => e.tier == 3).elementAt(_random.nextInt(2));
-      }
-
+      final emojiTier = _getWeightedRandomEmoji();
+      final markerId = 'emoji_${position.latitude}_${position.longitude}_${now.millisecondsSinceEpoch}_$i';
+      
       newMarkers.add(
         await EmojiMarker.createMarker(
           position: position,
-          id: 'emoji_${DateTime.now().millisecondsSinceEpoch}_$i',
+          id: markerId,
           emoji: emojiTier.emoji,
-          size: emojiTier.tier == 3 ? 70 : 60, // Larger for tier 3
+          size: emojiTier.tier == 3 ? 70 : 60,
           tier: emojiTier.tier,
           onTap: () => _handleEmojiTap(position, emojiTier),
         ),
       );
     }
 
-    // Generate guaranteed hotspot emoji if within range
-    final hotspotDistance = _calculateDistance(_currentLocation!, _specialHotspot.location);
-    if (hotspotDistance <= 350) {
-      final hotspotTier = emojiTiers.where((e) => e.tier == _specialHotspot.guaranteedTier).first;
-      newMarkers.add(
-        await EmojiMarker.createMarker(
-          position: _specialHotspot.location,
-          id: 'hotspot_emoji',
-          emoji: hotspotTier.emoji,
-          size: 80, // Extra large for hotspot
-          tier: hotspotTier.tier,
-          onTap: () => _handleEmojiTap(_specialHotspot.location, hotspotTier),
-        ),
-      );
+    if (mounted) {
+      setState(() {
+        // Clear old markers and add new ones
+        _markers.clear();
+        _markers.addAll(newMarkers);
+        _updateVisibleEmojis();
+      });
+    }
+  }
+
+  EmojiTier _getWeightedRandomEmoji() {
+    final roll = _random.nextDouble();
+    double cumulative = 0.0;
+    
+    for (final emoji in emojiTiers) {
+      cumulative += emoji.spawnChance;
+      if (roll < cumulative) {
+        return emoji;
+      }
+    }
+    
+    return emojiTiers.first;
+  }
+
+  void _updateVisibleEmojis() {
+    if (!_locationReady) return;
+
+    final nowVisible = <String>{};
+    double checkRadius = _visibilityRadius;
+
+    // Expand visibility range when zoomed out
+    if (_currentZoom < 16) checkRadius *= 1.5;
+    if (_currentZoom < 14) checkRadius *= 2;
+
+    for (final marker in _markers) {
+      final distance = _calculateDistance(_currentPosition, marker.position);
+      if (distance <= checkRadius) {
+        nowVisible.add(marker.markerId.value);
+      }
     }
 
     if (mounted) {
       setState(() {
-        _markers
-          ..clear()
-          ..addAll(newMarkers);
+        _visibleEmojiIds = nowVisible;
         _updateClosestEmoji();
       });
     }
   }
 
-  double _calculateDistance(LatLng pos1, LatLng pos2) {
-    const earthRadius = 6371000.0; // meters
-    final lat1 = pos1.latitude * pi / 180;
-    final lon1 = pos1.longitude * pi / 180;
-    final lat2 = pos2.latitude * pi / 180;
-    final lon2 = pos2.longitude * pi / 180;
+  void _updateClosestEmoji() {
+    if (!_locationReady) {
+      setState(() => _distanceToClosestEmoji = double.infinity);
+      return;
+    }
 
-    final dLat = lat2 - lat1;
-    final dLon = lon2 - lon1;
+    double minDistance = double.infinity;
+    for (final marker in _markers) {
+      if (!_visibleEmojiIds.contains(marker.markerId.value)) continue;
+      final distance = _calculateDistance(_currentPosition, marker.position);
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+    }
 
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
-    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-
-    return earthRadius * c;
+    setState(() => _distanceToClosestEmoji = minDistance);
   }
 
   void _handleEmojiTap(LatLng emojiPosition, EmojiTier emojiTier) async {
-    if (_currentLocation == null || _isCatching) return;
+    if (!_locationReady || _isCatching) return;
 
-    final distance = _calculateDistance(_currentLocation!, emojiPosition);
-    if (distance > 7) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Too far away! ${distance.toStringAsFixed(1)}m'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+    final distance = _calculateDistance(_currentPosition, emojiPosition);
+    if (distance > _interactionRadius) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Too far away! (${distance.toStringAsFixed(1)}m)'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
       return;
     }
 
@@ -182,17 +284,20 @@ class _MapScreenState extends State<MapScreen> {
         MaterialPageRoute(
           builder: (context) => EmojiCatchScreen(
             emojiTier: emojiTier,
-            onCatchComplete: () => _addToInventory(emojiTier),
+            catchLocation: emojiPosition,
+            onCatchComplete: () => _addToInventory(emojiTier, emojiPosition),
           ),
         ),
       );
 
       if (caught ?? false) {
-        _markers.removeWhere((m) => m.position == emojiPosition);
-        _updateClosestEmoji();
+        if (mounted) {
+          setState(() {
+            _markers.removeWhere((m) => m.position == emojiPosition);
+            _updateClosestEmoji();
+          });
+        }
       }
-    } catch (e) {
-      debugPrint('Error catching emoji: $e');
     } finally {
       if (mounted) {
         setState(() => _isCatching = false);
@@ -200,69 +305,67 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _addToInventory(EmojiTier emojiTier) {
-    setState(() {
-      _inventory.add(EmojiInventoryItem(
-        emoji: emojiTier.emoji,
-        points: emojiTier.points,
-        caughtTime: DateTime.now(),
-      ));
-      _totalPoints += emojiTier.points;
-    });
-  }
-
-  void _updateClosestEmoji() {
-    if (_currentLocation == null || _markers.isEmpty) {
-      setState(() => _distanceToClosestEmoji = double.infinity);
-      return;
-    }
-
-    double minDistance = double.infinity;
-    for (final marker in _markers) {
-      final distance = _calculateDistance(_currentLocation!, marker.position);
-      if (distance < minDistance) {
-        minDistance = distance;
-      }
-    }
-
-    setState(() => _distanceToClosestEmoji = minDistance);
-  }
-
-  Future<void> _animateMarker(LatLng destination) async {
-    _markers.removeWhere((m) => m.markerId.value == 'animatedMarker');
-    final newMarker = await EmojiMarker.createMarker(
-      position: destination,
-      id: 'animatedMarker',
-      emoji: '📍',
-      size: 32,
-      tier: 0,
-      onTap: () {},
-    );
+  void _addToInventory(EmojiTier emojiTier, LatLng catchLocation) {
     if (mounted) {
       setState(() {
-        _animatedMarker = newMarker;
-        _markers.add(newMarker);
-        _updateClosestEmoji();
+        _inventory.add(EmojiInventoryItem(
+          emoji: emojiTier.emoji,
+          points: emojiTier.points,
+          tier: emojiTier.tier,
+          caughtTime: DateTime.now(),
+          caughtLocation: catchLocation,
+        ));
+        _totalPoints += emojiTier.points;
       });
     }
   }
 
-  @override
-  void dispose() {
-    _mapController.dispose();
-    _generationTimer?.cancel();
-    super.dispose();
+  LatLng _calculateNewPosition(LatLng center, double distance, double angle) {
+    final distanceInDegrees = distance / 111300.0;
+    return LatLng(
+      center.latitude + distanceInDegrees * cos(angle),
+      center.longitude + distanceInDegrees * sin(angle),
+    );
   }
 
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
+  double _calculateDistance(LatLng pos1, LatLng pos2) {
+    return vm.Vector2(pos1.latitude.toDouble(), pos1.longitude.toDouble())
+        .distanceTo(vm.Vector2(pos2.latitude.toDouble(), pos2.longitude.toDouble())) 
+        * 111300.0;
+  }
+
+  Future<void> _centerMapOnUser() async {
+    if (_locationReady && _mapController != null) {
+      await _mapController.animateCamera(
+        CameraUpdate.newLatLngZoom(_currentPosition, _currentZoom),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_locationReady) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              const Text('Initializing location...'),
+              TextButton(
+                onPressed: _initializeLocation,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Emoji Map"),
+        title: const Text("Emoji GO"),
         actions: [
           Padding(
             padding: const EdgeInsets.all(8.0),
@@ -285,31 +388,25 @@ class _MapScreenState extends State<MapScreen> {
       body: Stack(
         children: [
           GoogleMap(
-            initialCameraPosition: const CameraPosition(
-              target: LatLng(0, 0),
-              zoom: 18.0,
+            initialCameraPosition: CameraPosition(
+              target: _currentPosition,
+              zoom: _currentZoom,
             ),
-            markers: _markers.where((marker) {
-              if (_currentLocation == null) return false;
-              final distance = _calculateDistance(
-                _currentLocation!, 
-                marker.position
-              );
-              return distance <= 15; // Only show within 15m
-            }).toSet(),
-            onMapCreated: _onMapCreated,
-            onTap: (LatLng tappedPoint) async {
-              await _animateMarker(tappedPoint);
+            markers: _markers.where((m) => _visibleEmojiIds.contains(m.markerId.value)).toSet(),
+            onMapCreated: (controller) {
+              _mapController = controller;
+              _generateEmojisAroundLocation();
+            },
+            onCameraMove: (position) {
+              setState(() => _currentZoom = position.zoom);
+              _updateVisibleEmojis();
             },
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
+            compassEnabled: true,
+            zoomControlsEnabled: false,
           ),
-          Positioned(
-            bottom: 20,
-            left: 20,
-            right: 20,
-            child: _buildDistanceIndicator(),
-          ),
+          _buildRadarWidget(),
         ],
       ),
       floatingActionButton: Column(
@@ -317,7 +414,7 @@ class _MapScreenState extends State<MapScreen> {
         children: [
           FloatingActionButton(
             heroTag: 'location',
-            onPressed: _initMap,
+            onPressed: _centerMapOnUser,
             child: const Icon(Icons.my_location),
           ),
           const SizedBox(height: 10),
@@ -326,80 +423,111 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: _generateEmojisAroundLocation,
             child: const Icon(Icons.refresh),
           ),
-          const SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: 'hotspot',
-            onPressed: () => _mapController.animateCamera(
-              CameraUpdate.newLatLng(_specialHotspot.location),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRadarWidget() {
+    return Positioned(
+      bottom: 20,
+      left: 20,
+      right: 20,
+      child: Card(
+        color: Colors.black.withOpacity(0.7),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildRadarIndicator(),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Nearby: ${_visibleEmojiIds.length}',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      Text(
+                        _distanceToClosestEmoji == double.infinity
+                          ? 'No emojis detected'
+                          : 'Closest: ${_distanceToClosestEmoji.toStringAsFixed(1)}m',
+                        style: TextStyle(
+                          color: _distanceToClosestEmoji <= _interactionRadius
+                            ? Colors.green
+                            : Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: _distanceToClosestEmoji > _visibilityRadius
+                    ? 1.0
+                    : _distanceToClosestEmoji / _visibilityRadius,
+                backgroundColor: Colors.grey[800],
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  _distanceToClosestEmoji <= _interactionRadius
+                    ? Colors.green
+                    : Colors.orange,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRadarIndicator() {
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.blue, width: 2),
+      ),
+      child: Stack(
+        children: [
+          if (_distanceToClosestEmoji != double.infinity)
+            AnimatedRotation(
+              duration: const Duration(seconds: 3),
+              turns: 1,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: SweepGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.blue.withOpacity(0.3),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
+                ),
+              ),
             ),
-            child: const Icon(Icons.star),
+          Center(
+            child: Icon(
+              Icons.location_searching,
+              color: Colors.blue[200],
+              size: 30,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDistanceIndicator() {
-    return Card(
-      color: Colors.black.withOpacity(0.7),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.timer, color: Colors.white, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  _lastGenerationTime == null 
-                    ? 'Generating soon...'
-                    : 'Next gen: ${_formatTimeRemaining()}',
-                  style: const TextStyle(color: Colors.white),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.emoji_emotions, color: Colors.white, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  _distanceToClosestEmoji == double.infinity
-                    ? 'No emojis nearby'
-                    : 'Closest: ${_distanceToClosestEmoji.toStringAsFixed(1)}m',
-                  style: TextStyle(
-                    color: _distanceToClosestEmoji <= 7 
-                      ? Colors.green 
-                      : Colors.white,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: _distanceToClosestEmoji > 15 
-                  ? 1.0 
-                  : _distanceToClosestEmoji / 15,
-              backgroundColor: Colors.grey[800],
-              valueColor: AlwaysStoppedAnimation<Color>(
-                _distanceToClosestEmoji <= 7 
-                  ? Colors.green 
-                  : Colors.orange,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatTimeRemaining() {
-    if (_lastGenerationTime == null) return '0:00';
-    final nextGen = _lastGenerationTime!.add(const Duration(minutes: 10));
-    final remaining = nextGen.difference(DateTime.now());
-    final minutes = remaining.inMinutes;
-    final seconds = remaining.inSeconds.remainder(60);
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    _emojiUpdateTimer?.cancel();
+    _mapController.dispose();
+    super.dispose();
   }
 }
