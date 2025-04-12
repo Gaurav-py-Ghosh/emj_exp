@@ -1,14 +1,14 @@
-// inventory_screen.dart
-import 'package:emoji_exp/widgets/emoji_model.dart';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
-// import 'emoji_model.dart';
+import '../widgets/emoji_model.dart';
+import '../services/storage_service.dart';
 
 class InventoryScreen extends StatelessWidget {
-  final List<EmojiInventoryItem> inventory;
-
   const InventoryScreen({super.key, required this.inventory});
+
+  final List<EmojiInventoryItem> inventory;
 
   @override
   Widget build(BuildContext context) {
@@ -100,47 +100,46 @@ class InventoryScreen extends StatelessWidget {
     }
 
     return ListView.builder(
-  itemCount: items.length,
-  itemBuilder: (context, index) {
-    final item = items[index];
-    final formattedTime = DateFormat.Hms().format(item.caughtTime);
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final formattedTime = DateFormat.Hms().format(item.caughtTime);
 
-    return FutureBuilder<List<Placemark>>(
-      future: item.caughtLocation != null
-          ? placemarkFromCoordinates(
-              item.caughtLocation!.latitude,
-              item.caughtLocation!.longitude,
-            )
-          : Future.value([]),
-      builder: (context, snapshot) {
-        String locationText = 'Location: Unknown';
-        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-          final place = snapshot.data!.first;
-          locationText =
-              'Location: ${place.locality ?? ''}, ${place.country ?? ''}';
-        }
+        return FutureBuilder<List<Placemark>>(
+          future: item.caughtLocation != null
+              ? placemarkFromCoordinates(
+                  item.caughtLocation!.latitude,
+                  item.caughtLocation!.longitude,
+                )
+              : Future.value([]),
+          builder: (context, snapshot) {
+            String locationText = 'Location: Unknown';
+            if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+              final place = snapshot.data!.first;
+              locationText =
+                  'Location: ${place.locality ?? ''}, ${place.country ?? ''}';
+            }
 
-        return ListTile(
-          leading: Text(item.emoji, style: const TextStyle(fontSize: 30)),
-          title: Text('${item.points} points'),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Caught: ${item.caughtTime.toString().split(' ')[0]} $formattedTime'),
-              if (item.caughtLocation != null)
-                Text(locationText, style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          trailing: Chip(
-            label: Text('Tier ${item.tier}'),
-            backgroundColor: _getTierColor(item.tier),
-          ),
+            return ListTile(
+              leading: Text(item.emoji, style: const TextStyle(fontSize: 30)),
+              title: Text('${item.points} points'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Caught: ${item.caughtTime.toString().split(' ')[0]} $formattedTime'),
+                  if (item.caughtLocation != null)
+                    Text(locationText, style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+              trailing: Chip(
+                label: Text('Tier ${item.tier}'),
+                backgroundColor: _getTierColor(item.tier),
+              ),
+            );
+          },
         );
       },
     );
-  },
-);
-
   }
 
   Color _getTierColor(int tier) {

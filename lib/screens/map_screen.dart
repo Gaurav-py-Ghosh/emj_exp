@@ -5,11 +5,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:camera/camera.dart';
 import 'package:vector_math/vector_math.dart' as vm;
+import 'package:hive_flutter/hive_flutter.dart';
 import '../widgets/emoji_model.dart';
 import '../widgets/emoji_marker.dart';
 import 'emoji_catch_screen.dart';
 import 'inventory_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/storage_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -27,7 +29,7 @@ class _MapScreenState extends State<MapScreen> {
   
   // Game state
   int _totalPoints = 0;
-  final List<EmojiInventoryItem> _inventory = [];
+  late Box<EmojiInventoryItem> _inventoryBox;
   bool _isCatching = false;
   
   // Location tracking
@@ -60,8 +62,18 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _initializeApp() async {
+    await _initializeStorage();
     await _initializeCamera();
     await _initializeLocation();
+  }
+
+  Future<void> _initializeStorage() async {
+    _inventoryBox = await Hive.openBox<EmojiInventoryItem>(StorageService.inventoryBoxName);
+    _calculateTotalPoints();
+  }
+
+  void _calculateTotalPoints() {
+    _totalPoints = _inventoryBox.values.fold(0, (sum, item) => sum + item.points);
   }
 
   Future<void> _initializeCamera() async {
@@ -346,15 +358,18 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _addToInventory(EmojiTier emojiTier, LatLng catchLocation) {
+    final newItem = EmojiInventoryItem(
+      emoji: emojiTier.emoji,
+      points: emojiTier.points,
+      tier: emojiTier.tier,
+      caughtTime: DateTime.now(),
+      caughtLocation: catchLocation,
+    );
+
+    _inventoryBox.add(newItem);
+    
     if (mounted) {
       setState(() {
-        _inventory.add(EmojiInventoryItem(
-          emoji: emojiTier.emoji,
-          points: emojiTier.points,
-          tier: emojiTier.tier,
-          caughtTime: DateTime.now(),
-          caughtLocation: catchLocation,
-        ));
         _totalPoints += emojiTier.points;
       });
     }
@@ -419,7 +434,7 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => InventoryScreen(inventory: _inventory),
+                builder: (context) => InventoryScreen(inventory: _inventoryBox.values.toList()),
               ),
             ),
           ),

@@ -162,13 +162,11 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
         _isSaving = true;
       });
 
-      // Capture screenshot
-      RenderRepaintBoundary boundary = _captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
-      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final boundary = _captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw Exception('Failed to capture screenshot');
 
-      // Save to Pictures directory
       final directory = Directory('/storage/emulated/0/Pictures/EmojiExp');
       if (!directory.existsSync()) {
         directory.createSync(recursive: true);
@@ -264,7 +262,6 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Camera Preview with proper aspect ratio
           if (_initializeControllerFuture != null)
             FutureBuilder<void>(
               future: _initializeControllerFuture,
@@ -281,7 +278,6 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
                           fit: StackFit.expand,
                           children: [
                             CameraPreview(_controller!),
-                            // Emoji Overlay
                             Center(
                               child: widget.emojiTier.hasSpecialAnimation
                                   ? AnimatedBuilder(
@@ -304,7 +300,6 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
                                       style: const TextStyle(fontSize: 100),
                                     ),
                             ),
-                            // Scanning Line
                             if (_isScanning)
                               Positioned(
                                 top: _scanPosition * MediaQuery.of(context).size.height,
@@ -314,7 +309,6 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
                                   color: Colors.red.withOpacity(0.7),
                                 ),
                               ),
-                            // Progress Indicator
                             if (_isScanning)
                               Positioned(
                                 bottom: 100,
@@ -352,7 +346,6 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
               },
             ),
 
-          // Action Buttons (outside RepaintBoundary to exclude from screenshot)
           Positioned(
             bottom: 20,
             left: 20,
@@ -378,10 +371,8 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
             ),
           ),
 
-          // Capture Options Modal
           if (_showCaptureOptions) _buildCaptureOptionsModal(),
 
-          // Loading Indicator
           if (_isSaving)
             const Center(
               child: CircularProgressIndicator(),
@@ -433,14 +424,10 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
 
   Color _getProgressColor(int tier) {
     switch (tier) {
-      case 1:
-        return Colors.blue;
-      case 2:
-        return Colors.purple;
-      case 3:
-        return Colors.orange;
-      default:
-        return Colors.green;
+      case 1: return Colors.blue;
+      case 2: return Colors.purple;
+      case 3: return Colors.orange;
+      default: return Colors.green;
     }
   }
 
