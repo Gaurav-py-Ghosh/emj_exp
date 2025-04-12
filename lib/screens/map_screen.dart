@@ -12,6 +12,8 @@ import 'emoji_catch_screen.dart';
 import 'inventory_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/storage_service.dart';
+import 'package:flutter/services.dart';
+import 'dart:ui' as ui;
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -55,6 +57,46 @@ class _MapScreenState extends State<MapScreen> {
   static const Duration _emojiRefreshInterval = Duration(minutes: 2);
   static const double _minEmojiDistance = 2.0;
 
+  // Player icons
+  late BitmapDescriptor _playerIconStill;
+  late BitmapDescriptor _playerIconWalking;
+  bool _isMoving = false;
+  DateTime _lastLocationUpdate = DateTime.now();
+  static const _movementThreshold = 0.5; // meters
+
+  // Add this property at the top of the class
+  Timer? _walkingAnimationTimer;
+  bool _showWalkingFrame = false;
+
+  // Add these properties to the class
+  final List<Map<String, dynamic>> _specialLocations = [
+    {
+      'position': const LatLng(28.248469525586557, 76.81188335320125),
+      'name': 'Tuck Shop',
+      'emoji': '👑'  // crown
+    },
+    {
+      'position': const LatLng(28.24713543653385, 76.81113646602226),
+      'name': 'Apartment A',
+      'emoji': '🎯'  // target
+    },
+    {
+      'position': const LatLng(28.247606829475224, 76.81369700185591),
+      'name': 'Burger Sign',
+      'emoji': '👑'  // crown
+    },
+    {
+      'position': const LatLng(28.246286117629833, 76.81364496182871),
+      'name': 'Library Path',
+      'emoji': '🎯'  // target
+    },
+    {
+      'position': const LatLng(28.246852907641117, 76.81440809842454),
+      'name': 'Library Entrance',
+      'emoji': '👑'  // crown
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -62,9 +104,41 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _initializeApp() async {
+    await _createPlayerIcons();
     await _initializeStorage();
     await _initializeCamera();
     await _initializeLocation();
+  }
+
+  // Modify _createPlayerIcons to resize the icons
+  Future<void> _createPlayerIcons() async {
+    final ByteData stillData = await rootBundle.load('assets/still.png');
+    final ByteData walkingData = await rootBundle.load('assets/walking.png');
+    
+    // Resize the icons to be smaller (adjust size as needed)
+    final ui.Codec stillCodec = await ui.instantiateImageCodec(
+      stillData.buffer.asUint8List(),
+      targetWidth: 32, // Adjust size as needed
+      targetHeight: 32,
+    );
+    final ui.Codec walkingCodec = await ui.instantiateImageCodec(
+      walkingData.buffer.asUint8List(),
+      targetWidth: 32, // Adjust size as needed
+      targetHeight: 32,
+    );
+    
+    final ui.FrameInfo stillFrame = await stillCodec.getNextFrame();
+    final ui.FrameInfo walkingFrame = await walkingCodec.getNextFrame();
+    
+    _playerIconStill = BitmapDescriptor.fromBytes(
+      await stillFrame.image.toByteData(format: ui.ImageByteFormat.png)
+        .then((byteData) => byteData!.buffer.asUint8List())
+    );
+    
+    _playerIconWalking = BitmapDescriptor.fromBytes(
+      await walkingFrame.image.toByteData(format: ui.ImageByteFormat.png)
+        .then((byteData) => byteData!.buffer.asUint8List())
+    );
   }
 
   Future<void> _initializeStorage() async {
@@ -129,6 +203,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  // Modify _startLocationTracking
   void _startLocationTracking() {
     _location.changeSettings(
       accuracy: LocationAccuracy.high,
@@ -140,17 +215,46 @@ class _MapScreenState extends State<MapScreen> {
       if (currentLocation.latitude == null || currentLocation.longitude == null) return;
       
       final newPosition = LatLng(currentLocation.latitude!, currentLocation.longitude!);
+      final distance = _calculateDistance(_currentPosition, newPosition);
+      final now = DateTime.now();
       
-      if (!_locationReady || _calculateDistance(_currentPosition, newPosition) > 5) {
+      // Update movement state
+      final bool wasMoving = _isMoving;
+      _isMoving = distance > _movementThreshold;
+      
+      // Start/stop walking animation
+      if (_isMoving && _walkingAnimationTimer == null) {
+        _walkingAnimationTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+          if (mounted) {
+            setState(() => _showWalkingFrame = !_showWalkingFrame);
+          }
+        });
+      } else if (!_isMoving && _walkingAnimationTimer != null) {
+        _walkingAnimationTimer?.cancel();
+        _walkingAnimationTimer = null;
+        _showWalkingFrame = false;
+      }
+      
+      if (!_locationReady || distance > 5 || wasMoving != _isMoving) {
         if (mounted) {
           setState(() {
             _currentPosition = newPosition;
             _locationReady = true;
+            // Update player marker with appropriate icon and no rotation
+            _markers.removeWhere((m) => m.markerId.value == 'player');
+            _markers.add(Marker(
+              markerId: const MarkerId('player'),
+              position: newPosition,
+              icon: _isMoving ? (_showWalkingFrame ? _playerIconWalking : _playerIconStill) : _playerIconStill,
+              zIndex: 2,
+              anchor: const Offset(0.5, 0.5), // Center the marker
+            ));
           });
         }
         _updateMapCamera(newPosition);
         _updateVisibleEmojis();
       }
+      _lastLocationUpdate = now;
     }, onError: (e) {
       debugPrint('Location tracking error: $e');
     });
@@ -173,15 +277,15 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  // Modify _generateEmojisAroundLocation to include special locations
   Future<void> _generateEmojisAroundLocation() async {
     if (!_locationReady) return;
 
-    debugPrint('Generating emojis around: $_currentPosition');
-    
     final now = DateTime.now();
     _lastEmojiUpdate = now;
     final existingMarkers = _markers.toSet();
 
+    // Remove expired emojis
     _emojiSpawnTimes.removeWhere((id, spawnTime) {
       if (now.difference(spawnTime) > _emojiLifetime) {
         existingMarkers.removeWhere((m) => m.markerId.value == id);
@@ -191,7 +295,39 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     final newMarkers = <Marker>{};
-    final newEmojiCount = 5 + _random.nextInt(5);
+
+    // Add special location emojis
+    for (final location in _specialLocations) {
+      final markerId = 'special_${location['name'].toString().toLowerCase().replaceAll(' ', '_')}';
+      
+      // Only add if not already present
+      if (!_emojiSpawnTimes.containsKey(markerId)) {
+        final emojiTier = EmojiTier(
+          emoji: location['emoji'],
+          tier: 3,
+          points: 100,
+          spawnChance: 1.0,
+          hasSpecialAnimation: true  // Add this line
+        );
+
+        newMarkers.add(
+          await EmojiMarker.createMarker(
+            position: location['position'],
+            id: markerId,
+            emoji: location['emoji'],
+            size: 70, // Tier 3 size
+            tier: 3,
+            spawnTime: now,
+            onTap: () => _handleEmojiTap(location['position'], emojiTier),
+          ),
+        );
+        
+        _emojiSpawnTimes[markerId] = now;
+      }
+    }
+
+    // Generate random emojis as before
+    final newEmojiCount = 7 + _random.nextInt(5);
 
     for (int i = 0; i < newEmojiCount; i++) {
       final distance = _getStaggeredDistance(_spawnRadius);
@@ -263,11 +399,23 @@ class _MapScreenState extends State<MapScreen> {
     for (final emoji in tierEmojis) {
       cumulative += emoji.spawnChance;
       if (emojiRoll < cumulative) {
-        return emoji;
+        return EmojiTier(
+          emoji: emoji.emoji,
+          tier: emoji.tier,
+          points: emoji.points,
+          spawnChance: emoji.spawnChance,
+          hasSpecialAnimation: emoji.tier >= 2  // Add this line
+        );
       }
     }
 
-    return tierEmojis.first;
+    return EmojiTier(
+      emoji: tierEmojis.first.emoji,
+      tier: tierEmojis.first.tier,
+      points: tierEmojis.first.points,
+      spawnChance: tierEmojis.first.spawnChance,
+      hasSpecialAnimation: tierEmojis.first.tier >= 2  // Add this line
+    );
   }
 
   void _updateVisibleEmojis() {
@@ -280,6 +428,9 @@ class _MapScreenState extends State<MapScreen> {
     if (_currentZoom < 14) checkRadius *= 2;
 
     for (final marker in _markers) {
+      // Skip player marker when counting emojis
+      if (marker.markerId.value == 'player') continue;
+      
       final distance = _calculateDistance(_currentPosition, marker.position);
       if (distance <= checkRadius) {
         nowVisible.add(marker.markerId.value);
@@ -453,13 +604,17 @@ class _MapScreenState extends State<MapScreen> {
               _generateEmojisAroundLocation();
             },
             onCameraMove: (position) {
-              setState(() => _currentZoom = position.zoom);
+              setState(() {
+                _currentZoom = position.zoom;
+              });
               _updateVisibleEmojis();
             },
-            myLocationEnabled: true,
+            myLocationEnabled: false,
             myLocationButtonEnabled: false,
             compassEnabled: true,
             zoomControlsEnabled: false,
+            rotateGesturesEnabled: true,
+            tiltGesturesEnabled: true,
           ),
           _buildRadarWidget(),
         ],
@@ -472,12 +627,7 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: _centerMapOnUser,
             child: const Icon(Icons.my_location),
           ),
-          const SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: 'refresh',
-            onPressed: _generateEmojisAroundLocation,
-            child: const Icon(Icons.refresh),
-          ),
+          
         ],
       ),
     );
@@ -580,6 +730,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    _walkingAnimationTimer?.cancel();
     _locationSubscription?.cancel();
     _emojiUpdateTimer?.cancel();
     _mapController.dispose();
