@@ -1,6 +1,8 @@
 // inventory_screen.dart
 import 'package:emoji_exp/widgets/emoji_model.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:geocoding/geocoding.dart';
 // import 'emoji_model.dart';
 
 class InventoryScreen extends StatelessWidget {
@@ -98,22 +100,35 @@ class InventoryScreen extends StatelessWidget {
     }
 
     return ListView.builder(
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
+  itemCount: items.length,
+  itemBuilder: (context, index) {
+    final item = items[index];
+    final formattedTime = DateFormat.Hms().format(item.caughtTime);
+
+    return FutureBuilder<List<Placemark>>(
+      future: item.caughtLocation != null
+          ? placemarkFromCoordinates(
+              item.caughtLocation!.latitude,
+              item.caughtLocation!.longitude,
+            )
+          : Future.value([]),
+      builder: (context, snapshot) {
+        String locationText = 'Location: Unknown';
+        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+          final place = snapshot.data!.first;
+          locationText =
+              'Location: ${place.locality ?? ''}, ${place.country ?? ''}';
+        }
+
         return ListTile(
           leading: Text(item.emoji, style: const TextStyle(fontSize: 30)),
           title: Text('${item.points} points'),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Caught: ${item.caughtTime.toString().split(' ')[0]}'),
+              Text('Caught: ${item.caughtTime.toString().split(' ')[0]} $formattedTime'),
               if (item.caughtLocation != null)
-                Text(
-                  'Location: ${item.caughtLocation!.latitude.toStringAsFixed(4)}, '
-                  '${item.caughtLocation!.longitude.toStringAsFixed(4)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
+                Text(locationText, style: const TextStyle(fontSize: 12)),
             ],
           ),
           trailing: Chip(
@@ -123,6 +138,9 @@ class InventoryScreen extends StatelessWidget {
         );
       },
     );
+  },
+);
+
   }
 
   Color _getTierColor(int tier) {

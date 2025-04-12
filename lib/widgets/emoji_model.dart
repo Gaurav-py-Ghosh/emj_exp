@@ -48,13 +48,18 @@ class Hotspot {
 }
 
 const List<EmojiTier> emojiTiers = [
+  // Tier 1 emojis (common)
   EmojiTier(emoji: '😀', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.6),
   EmojiTier(emoji: '😎', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.25),
-  EmojiTier(emoji: '🤔', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.15),
-  EmojiTier(emoji: '🌟', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.7),
-  EmojiTier(emoji: '✨', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.3),
-  EmojiTier(emoji: '🎯', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.8),
-  EmojiTier(emoji: '👑', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.2),
+  EmojiTier(emoji: '🤔', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.1),
+
+  // Tier 2 emojis (uncommon)
+  EmojiTier(emoji: '🌟', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.03),
+  EmojiTier(emoji: '✨', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.015),
+
+  // Tier 3 emojis (rare)
+  EmojiTier(emoji: '🎯', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.005),
+  EmojiTier(emoji: '👑', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.005),
 ];
 
 const List<Hotspot> hotspots = [

@@ -1,4 +1,3 @@
-// map_screen.dart
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -21,9 +20,10 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   // Core components
   late GoogleMapController _mapController;
-  final Set<Marker> _markers = {};
+  late Set<Marker> _markers = {};
   final Location _location = Location();
   final Random _random = Random();
+  final Map<String, DateTime> _emojiSpawnTimes = {};
   
   // Game state
   int _totalPoints = 0;
@@ -31,7 +31,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _isCatching = false;
   
   // Location tracking
-  LatLng _currentPosition = const LatLng(0, 0); // Initialize with default
+  LatLng _currentPosition = const LatLng(0, 0);
   bool _locationReady = false;
   double _currentZoom = 18.0;
   StreamSubscription<LocationData>? _locationSubscription;
@@ -46,10 +46,12 @@ class _MapScreenState extends State<MapScreen> {
   List<CameraDescription>? _cameras;
   
   // Constants
-  static const double _spawnRadius = 100.0; // meters
-  static const double _interactionRadius = 7.0; // meters
-  static const double _visibilityRadius = 15.0; // meters
-  static const Duration _emojiRefreshInterval = Duration(seconds: 30);
+  static const double _spawnRadius = 145.0;
+  static const double _interactionRadius = 7.5;
+  static const double _visibilityRadius = 20.0;
+  static const Duration _emojiLifetime = Duration(minutes: 5);
+  static const Duration _emojiRefreshInterval = Duration(minutes: 2);
+  static const double _minEmojiDistance = 2.0;
 
   @override
   void initState() {
@@ -72,7 +74,6 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _initializeLocation() async {
     try {
-      // Check and request permissions
       final permissionStatus = await Permission.location.request();
       if (!permissionStatus.isGranted) {
         if (mounted) {
@@ -83,7 +84,6 @@ class _MapScreenState extends State<MapScreen> {
         return;
       }
 
-      // Check if location service is enabled
       final serviceEnabled = await _location.serviceEnabled();
       if (!serviceEnabled) {
         final serviceRequest = await _location.requestService();
@@ -95,7 +95,6 @@ class _MapScreenState extends State<MapScreen> {
         }
       }
 
-      // Get initial position
       final initialLocation = await _location.getLocation();
       if (mounted) {
         setState(() {
@@ -104,7 +103,6 @@ class _MapScreenState extends State<MapScreen> {
         });
       }
 
-      // Start tracking
       _startLocationTracking();
       _startEmojiUpdateTimer();
       _generateEmojisAroundLocation();
@@ -123,7 +121,7 @@ class _MapScreenState extends State<MapScreen> {
     _location.changeSettings(
       accuracy: LocationAccuracy.high,
       interval: 1000,
-      distanceFilter: 2.0,
+      distanceFilter: 3.0,
     );
 
     _locationSubscription = _location.onLocationChanged.listen((LocationData currentLocation) {
@@ -168,15 +166,27 @@ class _MapScreenState extends State<MapScreen> {
 
     debugPrint('Generating emojis around: $_currentPosition');
     
-    final newMarkers = <Marker>{};
     final now = DateTime.now();
     _lastEmojiUpdate = now;
+    final existingMarkers = _markers.toSet();
 
-    // Generate regular emojis
-    for (int i = 0; i < 15; i++) {
-      final distance = _random.nextDouble() * _spawnRadius;
+    _emojiSpawnTimes.removeWhere((id, spawnTime) {
+      if (now.difference(spawnTime) > _emojiLifetime) {
+        existingMarkers.removeWhere((m) => m.markerId.value == id);
+        return true;
+      }
+      return false;
+    });
+
+    final newMarkers = <Marker>{};
+    final newEmojiCount = 5 + _random.nextInt(5);
+
+    for (int i = 0; i < newEmojiCount; i++) {
+      final distance = _getStaggeredDistance(_spawnRadius);
       final angle = _random.nextDouble() * 2 * pi;
       final position = _calculateNewPosition(_currentPosition, distance, angle);
+      
+      if (_isTooCloseToOthers(position, existingMarkers)) continue;
       
       final emojiTier = _getWeightedRandomEmoji();
       final markerId = 'emoji_${position.latitude}_${position.longitude}_${now.millisecondsSinceEpoch}_$i';
@@ -188,33 +198,64 @@ class _MapScreenState extends State<MapScreen> {
           emoji: emojiTier.emoji,
           size: emojiTier.tier == 3 ? 70 : 60,
           tier: emojiTier.tier,
+          spawnTime: now,
           onTap: () => _handleEmojiTap(position, emojiTier),
         ),
       );
+      
+      _emojiSpawnTimes[markerId] = now;
     }
 
     if (mounted) {
       setState(() {
-        // Clear old markers and add new ones
-        _markers.clear();
-        _markers.addAll(newMarkers);
+        _markers = existingMarkers..addAll(newMarkers);
         _updateVisibleEmojis();
       });
     }
   }
 
+  double _getStaggeredDistance(double maxRadius) {
+    final roll = _random.nextDouble();
+    if (roll < 0.2) return 4 + _random.nextDouble() * (maxRadius * 0.3);
+    if (roll < 0.8) return maxRadius * 0.3 + _random.nextDouble() * (maxRadius * 0.5);
+    return maxRadius * 0.8 + _random.nextDouble() * (maxRadius * 0.2);
+  }
+
+  bool _isTooCloseToOthers(LatLng position, Set<Marker> existingMarkers) {
+    for (final marker in existingMarkers) {
+      if (_calculateDistance(position, marker.position) < _minEmojiDistance) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   EmojiTier _getWeightedRandomEmoji() {
+    const tierChances = {1: 0.7, 2: 0.2, 3: 0.1};
     final roll = _random.nextDouble();
     double cumulative = 0.0;
-    
-    for (final emoji in emojiTiers) {
-      cumulative += emoji.spawnChance;
+    int selectedTier = 1;
+
+    for (final entry in tierChances.entries) {
+      cumulative += entry.value;
       if (roll < cumulative) {
+        selectedTier = entry.key;
+        break;
+      }
+    }
+
+    final tierEmojis = emojiTiers.where((emoji) => emoji.tier == selectedTier).toList();
+    final emojiRoll = _random.nextDouble();
+    cumulative = 0.0;
+
+    for (final emoji in tierEmojis) {
+      cumulative += emoji.spawnChance;
+      if (emojiRoll < cumulative) {
         return emoji;
       }
     }
-    
-    return emojiTiers.first;
+
+    return tierEmojis.first;
   }
 
   void _updateVisibleEmojis() {
@@ -223,7 +264,6 @@ class _MapScreenState extends State<MapScreen> {
     final nowVisible = <String>{};
     double checkRadius = _visibilityRadius;
 
-    // Expand visibility range when zoomed out
     if (_currentZoom < 16) checkRadius *= 1.5;
     if (_currentZoom < 14) checkRadius *= 2;
 
