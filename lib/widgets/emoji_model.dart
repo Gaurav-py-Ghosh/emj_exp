@@ -96,13 +96,29 @@ class Hotspot {
 }
 
 const List<EmojiTier> emojiTiers = [
-  EmojiTier(emoji: '😀', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.6),
-  EmojiTier(emoji: '😎', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.25),
-  EmojiTier(emoji: '🤔', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.115),
-  EmojiTier(emoji: '🌟', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.015),
-  EmojiTier(emoji: '✨', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.015),
-  EmojiTier(emoji: '🎯', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.005),
-  EmojiTier(emoji: '👑', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.005),
+  // Tier 1 - Common (60% + 25% + 11.5% = 96.5% total)
+  EmojiTier(emoji: '😀', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.15), // 15%
+  EmojiTier(emoji: '😂', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.15), // 15%
+  EmojiTier(emoji: '😊', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.15), // 15%
+  EmojiTier(emoji: '😎', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.10), // 10%
+  EmojiTier(emoji: '🤩', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.10), // 10%
+  EmojiTier(emoji: '🤔', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.06), // 6%
+  EmojiTier(emoji: '🙄', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.06), // 6%
+  EmojiTier(emoji: '😏', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.05), // 5%
+  EmojiTier(emoji: '😍', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.05), // 5%
+  EmojiTier(emoji: '🥳', points: 1, tier: 1, hasSpecialAnimation: false, spawnChance: 0.05), // 5%
+
+  // Tier 2 - Rare (1.5% + 1.5% = 3% total)
+  EmojiTier(emoji: '🌟', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.0075),
+  EmojiTier(emoji: '✨', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.0075),
+  EmojiTier(emoji: '💎', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.0075),
+  EmojiTier(emoji: '🔥', points: 3, tier: 2, hasSpecialAnimation: true, spawnChance: 0.0075),
+
+  // Tier 3 - Legendary (0.5% + 0.5% = 1% total)
+  EmojiTier(emoji: '🎯', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.0025),
+  EmojiTier(emoji: '👑', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.0025),
+  EmojiTier(emoji: '🏆', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.0025),
+  EmojiTier(emoji: '💍', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.0025),
 ];
 
 const List<Hotspot> hotspots = [

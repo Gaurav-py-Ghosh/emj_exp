@@ -15,18 +15,29 @@ class EmojiMarker {
     final remainingLife = spawnTime.difference(DateTime.now()).inMinutes;
     final opacity = remainingLife < 1 ? 0.8 + 0.2 * (remainingLife / 1) : 1.0;
     
+    // Increase canvas size to accommodate effects
+    final canvasSize = size * 1.5;
+    
     final textPainter = TextPainter(
       text: TextSpan(
         text: emoji,
         style: TextStyle(
           fontSize: size.toDouble(),
-          color: Colors.black.withOpacity(opacity),
-          shadows: tier >= 3 ? [
+          color: Colors.white.withOpacity(opacity),
+          shadows: [
+            // 3D effect shadows
             Shadow(
-              blurRadius: 10.0,
-              color: Colors.yellow,
-              offset: Offset(0, 0),)
-          ] : null,
+              color: Colors.black.withOpacity(0.5),
+              offset: const Offset(2, 2),
+              blurRadius: 0,
+            ),
+            // Glow effect based on tier
+            Shadow(
+              color: _getTierColor(tier).withOpacity(0.8),
+              offset: const Offset(0, 0),
+              blurRadius: 8,
+            ),
+          ],
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -36,31 +47,69 @@ class EmojiMarker {
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
     
-    // Add pulsing effect for rare emojis
+    // Center the emoji in the larger canvas
+    final offset = Offset(
+      (canvasSize - textPainter.width) / 2,
+      (canvasSize - textPainter.height) / 2
+    );
+    
+    // Add holographic effect for higher tiers
     if (tier >= 2) {
-      final pulseValue = (math.sin(DateTime.now().millisecond / 1000 * 2 * math.pi)).abs();
-      final pulseColor = tier == 3 
-          ? Colors.yellow.withOpacity(0.3 * pulseValue * opacity)
-          : Colors.white.withOpacity(0.3 * opacity);
+      final now = DateTime.now().millisecondsSinceEpoch / 1000;
+      final pulseValue = (math.sin(now * 2 * math.pi)).abs();
       
-      final paint = Paint()
-        ..color = pulseColor
-        ..style = PaintingStyle.fill;
+      // Outer glow
+      final outerGlow = Paint()
+        ..color = _getTierColor(tier).withOpacity(0.2 * pulseValue)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 8);
       
       canvas.drawCircle(
-        Offset(size / 2, size / 2),
-        size / 2,
-        paint,
+        Offset(canvasSize / 2, canvasSize / 2),
+        size / 1.8,
+        outerGlow,
       );
+      
+      // Holographic rings
+      final ringPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1);
+      
+      for (var i = 0; i < 3; i++) {
+        final ringPhase = (now + i * 0.3) % 1.0;
+        final ringRadius = size * (0.4 + ringPhase * 0.3);
+        ringPaint.color = _getTierColor(tier).withOpacity((1 - ringPhase) * 0.3);
+        
+        canvas.drawCircle(
+          Offset(canvasSize / 2, canvasSize / 2),
+          ringRadius,
+          ringPaint,
+        );
+      }
     }
     
-    textPainter.paint(canvas, Offset.zero);
+    // Draw the emoji
+    textPainter.paint(canvas, offset);
     
     final picture = recorder.endRecording();
-    final image = await picture.toImage(size, size);
+    final image = await picture.toImage(canvasSize.toInt(), canvasSize.toInt());
     final bytes = await image.toByteData(format: ImageByteFormat.png);
     
     return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+  }
+
+  // Helper method to get tier colors
+  static Color _getTierColor(int tier) {
+    switch (tier) {
+      case 1: 
+        return Colors.cyan;
+      case 2: 
+        return Colors.purple;
+      case 3: 
+        return Colors.orange.shade400;
+      default: 
+        return Colors.blue;
+    }
   }
 
   static Future<Marker> createMarker({
