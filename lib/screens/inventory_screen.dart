@@ -453,7 +453,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                                   ),
                                 ),
                                 const Spacer(),
-                                if (!isSmallScreen) _buildEmojiCounter(item), // Replace _buildPowerIndicator here
+                           if (!isSmallScreen) _buildEmojiCounter(item), // Replace _buildPowerIndicator here
                               ],
                             ),
                             

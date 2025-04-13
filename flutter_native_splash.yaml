@@ -1,0 +1,26 @@
+flutter_native_splash:
+  # Background color (dark for high-tech look)
+  color: "#000000"
+  
+  # Your logo path
+  image: "assets/logo.png"
+  
+  # For dark mode (if your app supports it)
+  color_dark: "#000000"
+  image_dark: "assets/logo.png"
+
+  # Android 12+ specific configuration
+  android_12:
+    # The image parameter sets the splash screen icon image
+    image: "assets/logo.png"
+    # The color parameter sets the background color
+    color: "#000000"
+    # The image_dark parameter sets the splash screen icon image in dark mode
+    image_dark: "assets/logo.png"
+    # The color_dark parameter sets the background color in dark mode
+    color_dark: "#000000"
+
+  # Platform specific settings
+  android: true
+  ios: true
+  web: false

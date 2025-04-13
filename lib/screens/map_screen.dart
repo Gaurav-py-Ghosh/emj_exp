@@ -53,7 +53,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   
   // Constants
   static const double _spawnRadius = 145.0;
-  static const double _interactionRadius = 8.5;
+  static const double _interactionRadius = 10;
   static const double _visibilityRadius = 20.0;
   static const Duration _emojiLifetime = Duration(minutes: 5);
   static const Duration _emojiRefreshInterval = Duration(minutes: 2);
