@@ -120,54 +120,58 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
             AnimatedContainer(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeInOut,
-              height: _isExpanded ? (isSmallScreen ? 200 : 180) : (isSmallScreen ? 140 : 120),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1E3A5F), Color(0xFF162544)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF00FFFF).withOpacity(0.3),
-                        blurRadius: 10,
-                        spreadRadius: -5,
+              height: _isExpanded ? (isSmallScreen ? 220 : 200) : (isSmallScreen ? 140 : 120),
+              child: SingleChildScrollView( // Add ScrollView to handle overflow
+                physics: const NeverScrollableScrollPhysics(),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1E3A5F), Color(0xFF162544)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ],
-                    border: Border.all(
-                      color: const Color(0xFF00FFFF).withOpacity(0.3),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildStatCard('TOTAL POINTS', totalPoints, Icons.emoji_events, isSmallScreen),
-                            _buildStatCard('EMOJIS CAPTURED', widget.inventory.length, Icons.catching_pokemon, isSmallScreen),
-                          ],
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00FFFF).withOpacity(0.3),
+                          blurRadius: 10,
+                          spreadRadius: -5,
                         ),
-                        if (_isExpanded) 
-                          Padding(
-                            padding: const EdgeInsets.only(top: 12.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: [
-                                _buildTierStat('TIER 1', byTier[1]?.length ?? 0, Colors.blue, isSmallScreen),
-                                _buildTierStat('TIER 2', byTier[2]?.length ?? 0, Colors.purple, isSmallScreen),
-                                _buildTierStat('TIER 3', byTier[3]?.length ?? 0, Colors.orange, isSmallScreen),
-                              ],
-                            ),
-                          ),
                       ],
+                      border: Border.all(
+                        color: const Color(0xFF00FFFF).withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min, // Add this
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildStatCard('TOTAL POINTS', totalPoints, Icons.emoji_events, isSmallScreen),
+                              _buildStatCard('EMOJIS CAPTURED', widget.inventory.length, Icons.catching_pokemon, isSmallScreen),
+                            ],
+                          ),
+                          if (_isExpanded) 
+                            Padding(
+                              padding: const EdgeInsets.only(top: 16.0), // Increased padding
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  _buildTierStat('TIER 1', byTier[1]?.length ?? 0, Colors.blue, isSmallScreen),
+                                  _buildTierStat('TIER 2', byTier[2]?.length ?? 0, Colors.purple, isSmallScreen),
+                                  _buildTierStat('TIER 3', byTier[3]?.length ?? 0, Colors.orange, isSmallScreen),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -210,6 +214,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
 
   Widget _buildStatCard(String label, int value, IconData icon, bool isSmallScreen) {
     return Column(
+      mainAxisSize: MainAxisSize.min, // Add this
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
@@ -217,16 +222,16 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
             Icon(
               icon,
               color: const Color(0xFF00FFFF),
-              size: isSmallScreen ? 14 : 18,
+              size: isSmallScreen ? 12 : 16, // Reduced sizes
             ),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 color: Colors.white70,
-                fontSize: isSmallScreen ? 10 : 12,
+                fontSize: isSmallScreen ? 9 : 11, // Reduced sizes
                 fontWeight: FontWeight.w600,
-                letterSpacing: 0.8,
+                letterSpacing: 0.6,
               ),
             ),
           ],
@@ -243,7 +248,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
           child: Text(
             '$value',
             style: TextStyle(
-              fontSize: isSmallScreen ? 22 : 28,
+              fontSize: isSmallScreen ? 20 : 24, // Reduced sizes
               fontWeight: FontWeight.bold,
               color: Colors.white,
               fontFamily: 'Orbitron',
