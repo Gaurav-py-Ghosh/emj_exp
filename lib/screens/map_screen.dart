@@ -14,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/storage_service.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -104,21 +105,62 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     },
   ];
 
+  // Add to class properties
+  bool _hasShownRedBullEmoji = false;
+  late AnimationController _redBullAnimationController;
+  late Animation<double> _redBullRotation;
+  late Animation<double> _redBullScale;
+
   @override
   void initState() {
     super.initState();
-    _initializeApp();
     
     // Initialize radar animation
     _radarAnimationController = AnimationController(
+      duration: const Duration(seconds: 4),
       vsync: this,
+    );
+
+    _radarAnimation = Tween<double>(
+      begin: 0,
+      end: 2 * pi,
+    ).animate(CurvedAnimation(
+      parent: _radarAnimationController,
+      curve: Curves.linear,
+    ));
+
+    // Initialize RedBull animation
+    _redBullAnimationController = AnimationController(
       duration: const Duration(seconds: 3),
-    )..repeat();
+      vsync: this,
+    );
+
+    _redBullRotation = Tween<double>(
+      begin: 0,
+      end: 4 * pi,
+    ).animate(CurvedAnimation(
+      parent: _redBullAnimationController,
+      curve: Curves.easeInOutBack,
+    ));
+
+    _redBullScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.2),
+        weight: 40.0,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.2, end: 1.0),
+        weight: 60.0,
+      ),
+    ]).animate(CurvedAnimation(
+      parent: _redBullAnimationController,
+      curve: Curves.easeInOutCubic,
+    ));
+
+    // Start radar animation
+    _radarAnimationController.repeat();
     
-    _radarAnimation = Tween<double>(begin: 0.0, end: 2 * pi).animate(_radarAnimationController);
-    
-    // Load the dark map style
-    _loadMapStyle();
+    _initializeApp();
   }
 
   Future<void> _loadMapStyle() async {
@@ -369,6 +411,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     await _initializeStorage();
     await _initializeCamera();
     await _initializeLocation();
+    
+    // Wait for location to be ready
+    while (!_locationReady) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    
+    // Now spawn RedBull emoji
+    await _checkAndSpawnRedBullEmoji();
   }
 
   // Improved player icons creation
@@ -897,6 +947,178 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         }
       }
     });
+  }
+
+  Future<void> _checkAndSpawnRedBullEmoji() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hasShown = prefs.getBool('has_shown_redbull') ?? false;
+      
+      if (!hasShown) {
+        await prefs.setBool('has_shown_redbull', true);
+        _spawnRedBullEmoji();
+      }
+    } catch (e) {
+      debugPrint('Error spawning RedBull emoji: $e');
+    }
+  }
+
+  void _spawnRedBullEmoji() {
+    if (!mounted) return;
+
+    final redBullEmoji = EmojiTier(
+      emoji: 'redbull',  // Changed from '🔴' to 'redbull'
+      tier: EmojiTier.MASTER_TIER,
+      points: 500,  // Special high points
+      spawnChance: 0,  // Won't spawn randomly
+      hasSpecialAnimation: true,
+    );
+
+    // Spawn at a fixed distance from player
+    final position = _calculateNewPosition(
+      _currentPosition,
+      10.0,  // 10 meters away
+      0.0,   // North direction
+    );
+
+    EmojiMarker.createMarker(
+      position: position,
+      id: 'redbull_master',
+      emoji: 'redbull',  // Changed from '🔴' to 'redbull'
+      size: 100,  // Larger size
+      tier: EmojiTier.MASTER_TIER,
+      spawnTime: DateTime.now(),
+      onTap: () => _handleRedBullEmojiTap(position, redBullEmoji),
+    ).then((marker) {
+      if (!mounted) return;
+      setState(() {
+        _markers.add(marker);
+        _redBullAnimationController.repeat();
+        // Show message after a short delay
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _showRedBullMessage();
+        });
+      });
+    });
+  }
+
+  void _showRedBullMessage() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AnimatedBuilder(
+        animation: _redBullAnimationController,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _redBullScale.value,
+            child: AlertDialog(
+              backgroundColor: Colors.red.withOpacity(0.9),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Colors.white, width: 2),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Transform.rotate(
+                    angle: _redBullRotation.value,
+                    child: Image.asset(
+                      'assets/redmoji.png',
+                      width: 80,
+                      height: 80,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ShaderMask(
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [Colors.white, Colors.red],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ).createShader(bounds),
+                    child: const Text(
+                      'REDBULL GIVES YOU WINGS!',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Special Master Tier Emoji Spawned!\nCatch it if you can! 🎯',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    HapticFeedback.heavyImpact();
+                  },
+                  child: const Text(
+                    'AWESOME!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleRedBullEmojiTap(LatLng position, EmojiTier emojiTier) async {
+    // ... similar to normal _handleEmojiTap but with special effects
+    if (!_locationReady || _isCatching) return;
+
+    final distance = _calculateDistance(_currentPosition, position);
+    if (distance > _interactionRadius) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Get Closer to Feel the Wings!'),
+          backgroundColor: Colors.red[800],
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isCatching = true);
+    HapticFeedback.heavyImpact();
+
+    try {
+      final caught = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EmojiCatchScreen(
+            emojiTier: emojiTier,
+            catchLocation: position,
+            onCatchComplete: () => _addToInventory(emojiTier, position),
+          ),
+        ),
+      );
+
+      if (caught ?? false) {
+        setState(() {
+          _markers.removeWhere((m) => m.position == position);
+          _updateClosestEmoji();
+        });
+      }
+    } finally {
+      setState(() => _isCatching = false);
+    }
   }
 
   @override
@@ -1447,10 +1669,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _radarAnimationController.dispose();
+    _redBullAnimationController.dispose();
     _walkingAnimationTimer?.cancel();
     _locationSubscription?.cancel();
     _emojiUpdateTimer?.cancel();
-    _radarAnimationController.dispose();
     _mapController.dispose();
       super.dispose();
   }

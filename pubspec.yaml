@@ -49,7 +49,7 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   assets:
-    - assets/emoji.png
+    - assets/redmoji.png
     - assets/still.png
     - assets/walking.png
     - assets/stars_bg.png

@@ -898,21 +898,28 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
                     ),
                   ],
                   
-                  // The emoji itself
+                  // The emoji or RedBull image
                   Opacity(
                     opacity: _opacityAnimation.value,
-                    child: Text(
-                      widget.emojiTier.emoji,
-                      style: TextStyle(
-                        fontSize: 100,
-                        shadows: _showHologramEffect ? [
-                          Shadow(
-                            color: _getTierColor(widget.emojiTier.tier),
-                            blurRadius: 15,
-                            offset: const Offset(0, 0),)
-                        ] : null,
-                      ),
-                    ),
+                    child: widget.emojiTier.emoji == 'redbull' 
+                      ? Image.asset(
+                          'assets/redmoji.png',
+                          width: 100,
+                          height: 100,
+                        )
+                      : Text(
+                          widget.emojiTier.emoji,
+                          style: TextStyle(
+                            fontSize: 100,
+                            shadows: _showHologramEffect ? [
+                              Shadow(
+                                color: _getTierColor(widget.emojiTier.tier),
+                                blurRadius: 15,
+                                offset: const Offset(0, 0),
+                              )
+                            ] : null,
+                          ),
+                        ),
                   ),
                 ],
               ),

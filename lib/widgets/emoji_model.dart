@@ -1,5 +1,8 @@
+import 'dart:ui';
+import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hive/hive.dart';
+import 'package:vector_math/vector_math_64.dart';
 
 // part 'emoji_model.g.dart';
 
@@ -79,6 +82,27 @@ class EmojiTier {
     required this.hasSpecialAnimation,
     required this.spawnChance,
   });
+
+  static const int MASTER_TIER = 4;
+
+  // Make method public and static
+  static Color getTierColor(int tier) {
+    switch (tier) {
+      case 1:
+        return const Color(0xFF29B6F6); // Bright blue
+      case 2:
+        return const Color(0xFFAB47BC); // Bright purple
+      case 3:
+        return const Color(0xFFFF9800); // Bright orange
+      case MASTER_TIER:
+        return const Color(0xFFE53935); // RedBull red
+      default:
+        return const Color(0xFF4CAF50); // Green
+    }
+  }
+
+  // Helper getter for easy access
+  Color get color => getTierColor(tier);
 }
 
 class Hotspot {
@@ -119,6 +143,15 @@ const List<EmojiTier> emojiTiers = [
   EmojiTier(emoji: '👑', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.0025),
   EmojiTier(emoji: '🏆', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.0025),
   EmojiTier(emoji: '💍', points: 5, tier: 3, hasSpecialAnimation: true, spawnChance: 0.0025),
+
+  // Tier 4 - Master (RedBull)
+  EmojiTier(
+    emoji: 'redbull',  // Special identifier for RedBull image
+    points: 500,
+    tier: EmojiTier.MASTER_TIER,
+    hasSpecialAnimation: true,
+    spawnChance: 0.001
+  ),
 ];
 
 const List<Hotspot> hotspots = [

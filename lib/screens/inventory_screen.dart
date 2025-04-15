@@ -41,14 +41,15 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
+    final redbullEmojis = widget.inventory.where((item) => item.emoji == 'redbull').toList();
+    final regularEmojis = widget.inventory.where((item) => item.emoji != 'redbull').toList();
     final totalPoints = widget.inventory.fold(0, (sum, item) => sum + item.points);
     final byTier = {
-      1: widget.inventory.where((item) => item.tier == 1).toList(),
-      2: widget.inventory.where((item) => item.tier == 2).toList(),
-      3: widget.inventory.where((item) => item.tier == 3).toList(),
+      1: regularEmojis.where((item) => item.tier == 1).toList(),
+      2: regularEmojis.where((item) => item.tier == 2).toList(),
+      3: regularEmojis.where((item) => item.tier == 3).toList(),
     };
     
-    // Get screen size for responsive design
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 360;
 
@@ -117,6 +118,69 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
         ),
         child: Column(
           children: [
+            // RedBull Master Collection Section
+            if (redbullEmojis.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.red.shade900, Colors.red.shade800],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.red.withOpacity(0.3),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      'MASTER COLLECTION',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'assets/redmoji.png',
+                          width: 50,
+                          height: 50,
+                        ),
+                        const SizedBox(width: 16),
+                        Text(
+                          '×${redbullEmojis.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Total Points: ${redbullEmojis.fold(0, (sum, item) => sum + item.points)}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Stats Container
             AnimatedContainer(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeInOut,
@@ -177,6 +241,8 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                 ),
               ),
             ),
+
+            // Tier Tabs
             SizedBox(
               height: 50,
               child: Padding(
@@ -196,6 +262,8 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                 ),
               ),
             ),
+
+            // Tier List
             Expanded(
               child: IndexedStack(
                 index: _activeTab,
