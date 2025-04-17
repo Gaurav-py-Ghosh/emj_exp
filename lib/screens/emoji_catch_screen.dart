@@ -938,7 +938,7 @@ class _EmojiCatchScreenState extends State<EmojiCatchScreen>
           top: 40,
           left: 20,
           child: Container(
-            width: 120,
+            width: 150,
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: Colors.black38,

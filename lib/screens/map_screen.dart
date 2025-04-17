@@ -111,6 +111,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   late Animation<double> _redBullRotation;
   late Animation<double> _redBullScale;
 
+  // Add these to the _MapScreenState class properties
+  static const double _redBullSpawnRadius = 5.0;  // 5 meter radius for new players
+  static const double _redBullRandomSpawnChance = 0.005;  // 0.5% chance per spawn cycle
+
   @override
   void initState() {
     super.initState();
@@ -407,6 +411,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _initializeApp() async {
+    await _loadMapStyle();
     await _createPlayerIcons();
     await _initializeStorage();
     await _initializeCamera();
@@ -417,7 +422,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       await Future.delayed(const Duration(milliseconds: 100));
     }
     
-    // Now spawn RedBull emoji
+    // Initial spawn check
     await _checkAndSpawnRedBullEmoji();
   }
 
@@ -714,6 +719,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         _updateVisibleEmojis();
       });
     }
+
+    // Add RedBull spawn check at the end
+    await _checkAndSpawnRedBullEmoji();
   }
 
   double _getStaggeredDistance(double maxRadius) {
@@ -949,56 +957,89 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     });
   }
 
+  // Modify the _checkAndSpawnRedBullEmoji method
   Future<void> _checkAndSpawnRedBullEmoji() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final hasShown = prefs.getBool('has_shown_redbull') ?? false;
-      
-      if (!hasShown) {
-        await prefs.setBool('has_shown_redbull', true);
-        _spawnRedBullEmoji();
+      // Wait for map to be fully initialized
+      while (_mapController == null || !_locationReady) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+
+      // Force spawn for users with 0 points, ignore all other conditions
+      if (_totalPoints == 0 && mounted) {
+        _spawnRedBullEmoji(radius: 5.0); // Fixed 5m radius
+        return;
+      }
+
+      // Random spawn chance for regular gameplay
+      if (_random.nextDouble() < _redBullRandomSpawnChance) {
+        _spawnRedBullEmoji(radius: _spawnRadius);
       }
     } catch (e) {
-      debugPrint('Error spawning RedBull emoji: $e');
+      debugPrint('Error checking RedBull spawn: $e');
     }
   }
 
-  void _spawnRedBullEmoji() {
+  // Modify the _spawnRedBullEmoji method
+  void _spawnRedBullEmoji({required double radius}) {
     if (!mounted) return;
 
     final redBullEmoji = EmojiTier(
-      emoji: 'redbull',  // Changed from '🔴' to 'redbull'
+      emoji: 'redbull',
       tier: EmojiTier.MASTER_TIER,
-      points: 500,  // Special high points
-      spawnChance: 0,  // Won't spawn randomly
+      points: 500,
+      spawnChance: 0.0,
       hasSpecialAnimation: true,
     );
 
-    // Spawn at a fixed distance from player
-    final position = _calculateNewPosition(
-      _currentPosition,
-      10.0,  // 10 meters away
-      0.0,   // North direction
-    );
-
-    EmojiMarker.createMarker(
-      position: position,
-      id: 'redbull_master',
-      emoji: 'redbull',  // Changed from '🔴' to 'redbull'
-      size: 100,  // Larger size
-      tier: EmojiTier.MASTER_TIER,
-      spawnTime: DateTime.now(),
-      onTap: () => _handleRedBullEmojiTap(position, redBullEmoji),
-    ).then((marker) {
+    // Immediate spawn instead of delayed
+    Future.microtask(() async {
       if (!mounted) return;
-      setState(() {
-        _markers.add(marker);
-        _redBullAnimationController.repeat();
-        // Show message after a short delay
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _showRedBullMessage();
+
+      // For 0 points, force spawn directly north at exactly 5m
+      final position = _calculateNewPosition(
+        _currentPosition,
+        radius,  // Exactly 5m for new players
+        0.0,    // Direct north
+      );
+
+      try {
+        final marker = await EmojiMarker.createMarker(
+          position: position,
+          id: 'redbull_master',
+          emoji: 'redbull',
+          size: 100,
+          tier: EmojiTier.MASTER_TIER,
+          spawnTime: DateTime.now(),
+          onTap: () => _handleRedBullEmojiTap(position, redBullEmoji),
+        );
+
+        if (!mounted) return;
+
+        setState(() {
+          _markers.add(marker);
+          _mapController.animateCamera(
+            CameraUpdate.newLatLngBounds(
+              LatLngBounds(
+                southwest: LatLng(
+                  min(_currentPosition.latitude, position.latitude),
+                  min(_currentPosition.longitude, position.longitude),
+                ),
+                northeast: LatLng(
+                  max(_currentPosition.latitude, position.latitude),
+                  max(_currentPosition.longitude, position.longitude),
+                ),
+              ),
+              50, // Reduced padding for closer view
+            ),
+          );
         });
-      });
+
+        _redBullAnimationController.repeat();
+        _showRedBullMessage();
+      } catch (e) {
+        debugPrint('Error creating RedBull marker: $e');
+      }
     });
   }
 
